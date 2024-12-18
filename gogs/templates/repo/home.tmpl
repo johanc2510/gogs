@@ -1,0 +1,212 @@
+{{template "base/head" .}}
+<div id="app" class="repository file list">
+    {{template "base/alert" .}}
+    <div class="ui grid">
+        <div class="repository file list">
+            {{template "repo/header" .}}
+            <div class="ui fluid container">
+                {{template "base/alert" .}}
+                <div class="ui grid">
+                    <!-- Lista de repositórios -->
+                    <div class="three wide column">
+                        <div class="ui segment" style="max-height: 400px; overflow-y: auto;" @scroll="handleScroll">
+                            <h4>Lista de repositórios</h4>
+                            <ul>
+                                <!-- Renderizado dinamicamente pelo Vue.js -->
+                                <div v-for="repo in repos" :key="repo.id" class="repository-item">
+                                    <div class="ui grid">
+                                        <div class="ui fourteen wide column no-padding-left">
+                                            <div class="ui header">
+                                                <a class="name" :href="`${appSubURL}/${repo.owner_name}/${repo.name}`" v-html="repoDisplay(repo)"></a>
+                                            </div>
+                                            <p v-if="repo.description" class="has-emoji" v-html="repo.description"></p>
+                                            <p class="time" v-html="repo.updated_time_ago"></p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </ul>
+                            <!-- Indicador de carregamento -->
+                            <div v-if="loading" class="ui active inline loader"></div>
+                            <p v-if="!loading && !hasMore" class="no-more">Todos os repositórios foram carregados.</p>
+                        </div>
+                    </div>
+                    <!-- Conteúdo principal -->
+                    <div class="one wide column"></div>
+                    <div class="nine wide column" style="box-sizing: border-box !important;">
+                        <div class="ui fluid container">
+                            {{template "base/alert" .}}
+                            {{if .PageIsRepoHome}}
+                            <p id="repo-desc">
+                                {{if .Repository.Description}}
+                                    <span class="description has-emoji">{{.Repository.Description | NewLine2br | Str2HTML}}</span>
+                                {{else}}
+                                    <span class="no-description text-italic">{{.i18n.Tr "repo.no_desc"}}</span>
+                                {{end}}
+                                <a class="link" href="{{.Repository.Website}}">{{.Repository.Website}}</a>
+                            </p>
+                            {{end}}
+                            <div class="ui segment" id="git-stats">
+                                <div class="ui two horizontal center link list">
+                                    <div class="item">
+                                        <a href="{{.RepoLink}}/commits/{{EscapePound .BranchName}}"><span class="ui text black"><i class="octicon octicon-history"></i> <b>{{.CommitsCount}}</b> {{.i18n.Tr "repo.commits"}}</span></a>
+                                    </div>
+                                    <div class="item">
+                                        <a href="{{.RepoLink}}/branches"><span class="ui text black"><i class="octicon octicon-git-branch"></i><b>{{.BranchCount}}</b> {{.i18n.Tr "repo.git_branches"}}</span></a>
+                                    </div>
+                                    <div class="item">
+                                        <a href="{{.RepoLink}}/releases"><span class="ui text black"><i class="octicon octicon-tag"></i> <b>{{.Repository.NumTags}}</b> {{.i18n.Tr "repo.releases"}}</span></a>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="ui secondary menu">
+                                {{if .PullRequestCtx.Allowed}}
+                                <div class="fitted item">
+                                    <a href="{{.BaseRepo.Link}}/compare/{{EscapePound .BaseRepo.DefaultBranch}}...{{EscapePound .PullRequestCtx.HeadInfo}}">
+                                        <button class="ui green small button"><i class="octicon octicon-git-compare"></i></button>
+                                    </a>
+                                </div>
+                                {{end}}
+                                {{template "repo/branch_dropdown" .}}
+                                <div class="fitted item">
+                                    <div class="ui breadcrumb">
+                                        <a class="section" href="{{.RepoLink}}/src/{{EscapePound .BranchName}}">{{EllipsisString .Repository.Name 15}}</a>
+                                        {{ $n := len .TreeNames}}
+                                        {{ $l := Subtract $n 1}}
+                                        {{range $i, $v := .TreeNames}}
+                                            <div class="divider"> / </div>
+                                            {{if eq $i $l}}
+                                                <span class="active section">{{$v}}</span>
+                                            {{else}}
+                                                {{ $p := index $.Paths $i}}
+                                                <span class="section"><a href="{{EscapePound $.BranchLink}}/{{EscapePound $p}}">{{$v}}</a></span>
+                                            {{end}}
+                                        {{end}}
+                                    </div>
+                                </div>
+                                <div class="right fitted item">
+                                    {{if .Repository.CanEnableEditor}}
+                                    <div id="file-buttons" class="ui tiny blue buttons">
+                                        {{if .CanAddFile}}
+                                        <a href="{{.RepoLink}}/_new/{{EscapePound .BranchName}}/{{EscapePound .TreePath}}" class="ui button">
+                                            {{.i18n.Tr "repo.editor.new_file"}}
+                                        </a>
+                                        {{end}}
+                                        {{if .CanUploadFile}}
+                                        <a href="{{.RepoLink}}/_upload/{{EscapePound .BranchName}}/{{EscapePound .TreePath}}" class="ui button">
+                                            {{.i18n.Tr "repo.editor.upload_file"}}
+                                        </a>
+                                        {{end}}
+                                    </div>
+                                    {{end}}
+                                    {{if eq $n 0}}
+                                    <div class="ui action small input" id="clone-panel">
+                                        {{if not $.DisableHTTP}}
+                                        <button class="ui basic clone button" id="repo-clone-https" data-link="{{.CloneLink.HTTPS}}">
+                                            {{if UseHTTPS}}HTTPS{{else}}HTTP{{end}}
+                                        </button>
+                                        {{end}}
+                                        {{if not $.DisableSSH}}
+                                        <button class="ui basic clone button" id="repo-clone-ssh" data-link="{{.CloneLink.SSH}}">
+                                            SSH
+                                        </button>
+                                        {{end}}
+                                        <input id="repo-clone-url" value="{{if not $.DisableHTTP}}{{$.CloneLink.HTTPS}}{{else}}{{$.CloneLink.SSH}}{{end}}" readonly>
+                                        <button class="ui basic icon button poping up clipboard" id="clipboard-btn" data-original="{{.i18n.Tr "repo.copy_link"}}" data-success="{{.i18n.Tr "repo.copy_link_success"}}" data-error="{{.i18n.Tr "repo.copy_link_error"}}" data-content="{{.i18n.Tr "repo.copy_link"}}" data-variation="inverted tiny" data-clipboard-target="#repo-clone-url">
+                                            <i class="octicon octicon-clippy"></i>
+                                        </button>
+                                        <div class="ui basic jump dropdown icon button">
+                                            <i class="download icon"></i>
+                                            <div class="menu">
+                                                <a class="item" href="{{$.RepoLink}}/archive/{{EscapePound $.BranchName}}.zip"><i class="octicon octicon-file-zip"></i> ZIP</a>
+                                                <a class="item" href="{{$.RepoLink}}/archive/{{EscapePound $.BranchName}}.tar.gz"><i class="octicon octicon-file-zip"></i> TAR.GZ</a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {{end}}
+                                </div>
+                            </div>
+                            {{if .IsViewFile}}
+                            {{template "repo/view_file" .}}
+                            {{else}}
+                            {{template "repo/view_list" .}}
+                            {{end}}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {{template "base/footer" .}}
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/vue@2"></script>
+<script>
+    Vue.config.delimiters = ['[[', ']]'];
+    new Vue({
+        el: '#app',
+        data: {
+            repos: [], // Inicializa como uma lista vazia
+            remainingRepos: [], // Repositórios restantes para carregar dinamicamente
+            loading: false, // Indica se os repositórios estão carregando
+            hasMore: true, // Controle para saber se há mais itens a carregar
+            appSubURL: "{{.AppSubURL}}", // URL base para links
+        },
+        mounted() {
+            // Inicializa os repositórios com dados fornecidos pelo backend
+            try {
+                const allRepos = JSON.parse(`{{.ReposJSON}}`);
+                this.repos = allRepos.slice(0, 7); // Carrega apenas os 7 primeiros
+                this.remainingRepos = allRepos.slice(7); // Mantém o restante para carregar dinamicamente
+            } catch (error) {
+                console.error("Erro ao carregar os repositórios:", error);
+            }
+        },
+        methods: {
+            handleScroll(event) {
+                const container = event.target;
+
+                console.log("Scroll detectado");
+                console.log("ScrollTop:", container.scrollTop);
+                console.log("ClientHeight:", container.clientHeight);
+                console.log("ScrollHeight:", container.scrollHeight);
+
+                // Tolerância para detectar o fim do scroll
+                const tolerance = 5; // Pixels de tolerância
+                const bottomOfContainer =
+                    container.scrollTop + container.clientHeight >= container.scrollHeight - tolerance;
+
+                if (bottomOfContainer) {
+                    console.log("Fim do scroll detectado");
+                }
+
+                if (bottomOfContainer && this.remainingRepos.length > 0 && !this.loading) {
+                    console.log("Carregando mais repositórios...");
+                    this.loadMoreRepos();
+                }
+            },
+
+            loadMoreRepos() {
+                this.loading = true;
+
+                console.log("Repositórios restantes antes do carregamento:", this.remainingRepos.length);
+
+                const nextBatch = this.remainingRepos.splice(0, 5); // Carrega mais 5 repositórios
+                this.repos.push(...nextBatch);
+
+                console.log("Repositórios carregados:", nextBatch);
+                console.log("Repositórios visíveis:", this.repos);
+
+                if (this.remainingRepos.length === 0) {
+                    console.log("Todos os repositórios foram carregados.");
+                    this.hasMore = false;
+                }
+
+                this.loading = false;
+            },
+            repoDisplay(repo) {
+                return `${repo.owner_name} / ${repo.name}`;
+            },
+        },
+    });
+</script>
